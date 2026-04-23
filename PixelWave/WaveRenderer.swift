@@ -23,6 +23,9 @@ private struct RenderUniforms {
     var textureSize: SIMD2<Float>
     var time: Float
     var intensity: Float
+    var deepColor: SIMD3<Float>
+    var shallowColor: SIMD3<Float>
+    var skyColor: SIMD3<Float>
 }
 
 final class WaveRenderer: NSObject, MTKViewDelegate {
@@ -186,7 +189,10 @@ final class WaveRenderer: NSObject, MTKViewDelegate {
         var renderUniforms = RenderUniforms(
             textureSize: SIMD2<Float>(Float(displayTexture.width), Float(displayTexture.height)),
             time: simulationTime,
-            intensity: 1.0
+            intensity: 1.0,
+            deepColor: parameters.deepColor,
+            shallowColor: parameters.shallowColor,
+            skyColor: parameters.skyColor
         )
         renderEncoder.setFragmentBytes(&renderUniforms, length: MemoryLayout<RenderUniforms>.stride, index: 0)
 

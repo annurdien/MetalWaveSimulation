@@ -1,6 +1,6 @@
 # PixelWave
 
-A real-time 2D wave simulation running entirely on the GPU via Metal compute and render shaders. Touch the screen to inject ripples and watch them propagate, reflect off boundaries, interfere with each other, and gradually decay — all rendered with a stylised ocean-water aesthetic at up to 120 Hz.
+A realtime 2D wave simulation running entirely on the GPU via Metal compute and render shaders. Touch the screen to inject ripples and watch them propagate, reflect off boundaries, interfere with each other, and gradually decay all rendered with a stylised ocean-water aesthetic at up to 120 Hz.
 
 ---
 
@@ -440,17 +440,17 @@ Calm areas → tight highlights ($g = 88$). Turbulent areas → broad highlights
 
 #### 5. Depth-Based Water Color
 
-The wave height drives a blend between deep and shallow water tones:
+The wave height drives a blend between deep and shallow water tones. All three colors are **user-configurable** via `ColorPicker` controls in the UI:
 
 $$
 m = \text{saturate}(0.5 + 0.45\,u)
 $$
 
-| Color | RGB | Description |
+| Color | Default RGB | Description |
 |---|---|---|
-| $C_{\text{deep}}$ | $(0.006,\; 0.055,\; 0.11)$ | Near-black dark blue |
-| $C_{\text{shallow}}$ | $(0.02,\; 0.28,\; 0.4)$ | Teal |
-| $C_{\text{sky}}$ | $(0.42,\; 0.62,\; 0.79)$ | Pale blue |
+| $C_{\text{deep}}$ | $(0.004,\; 0.028,\; 0.075)$ | Deep ocean navy |
+| $C_{\text{shallow}}$ | $(0.008,\; 0.135,\; 0.22)$ | Ocean teal |
+| $C_{\text{sky}}$ | $(0.36,\; 0.54,\; 0.72)$ | Desaturated sky blue |
 
 $$
 C_{\text{water}} = \text{mix}(C_{\text{deep}},\; C_{\text{shallow}},\; m)
@@ -537,19 +537,31 @@ This avoids dark fringing at ripple edges and is the standard compositing mode.
 
 ## Configurable Parameters
 
-All parameters are exposed in the `WaveParameters` struct and controlled via the UI sliders:
+All parameters are exposed in the `WaveParameters` struct and controlled via the UI. Defaults are tuned for **realistic ocean physics**. Press **Defaults** in the control panel to restore them.
+
+### Physics
 
 | Parameter | Default | Range | Effect |
 |---|---|---|---|
-| `waveSpeed` | $18.0$ | $6$–$32$ | Propagation speed. Higher = faster expanding ripples. Clamped by CFL. |
-| `damping` | $0.75$ | $0.05$–$2.2$ | Energy loss rate ($\gamma$). Higher = ripples fade faster. |
-| `viscosity` | $0.35$ | $0$–$1.2$ | Velocity smoothing ($\nu$). Higher = fewer high-frequency ripples. |
-| `dispersion` | $0.24$ | $0$–$1$ | High-frequency chop ($\delta$). Blends anisotropic Laplacian difference. |
-| `edgeReflection` | $0.5$ | $0.1$–$1$ | Boundary reflection coefficient ($r$). $0$ = absorb, $1$ = mirror. |
-| `edgeWidth` | $0.08$ | $0.01$–$0.2$ | Absorption zone width ($b_w$), fraction of grid. |
-| `brushRadius` | $0.025$ | $0.01$–$0.08$ | Touch radius in normalised UV space ($r_k$). |
-| `impulse` | $0.62$ | $0.1$–$1.2$ | Touch strength multiplier ($s_k$). |
+| `waveSpeed` | $12.0$ | $6$–$32$ | Propagation speed. Higher = faster expanding ripples. Clamped by CFL. |
+| `damping` | $0.35$ | $0.05$–$2.2$ | Energy loss rate ($\gamma$). Lower values let waves persist longer. |
+| `viscosity` | $0.18$ | $0$–$1.2$ | Velocity smoothing ($\nu$). Higher = fewer high-frequency ripples. |
+| `dispersion` | $0.12$ | $0$–$1$ | High-frequency chop ($\delta$). Blends anisotropic Laplacian difference. |
+| `edgeReflection` | $0.42$ | $0.1$–$1$ | Boundary reflection coefficient ($r$). $0$ = absorb, $1$ = mirror. |
+| `edgeWidth` | $0.065$ | $0.01$–$0.2$ | Absorption zone width ($b_w$), fraction of grid. |
+| `brushRadius` | $0.035$ | $0.01$–$0.08$ | Touch radius in normalised UV space ($r_k$). |
+| `impulse` | $0.55$ | $0.1$–$1.2$ | Touch strength multiplier ($s_k$). |
 | `pixelSize` | $3.0$ | — | Screen pixels per simulation cell (controls grid resolution). |
+
+### Colors
+
+Three colors are configurable via `ColorPicker` controls:
+
+| Color | Default RGB | Role |
+|---|---|---|
+| Deep | $(0.004,\; 0.028,\; 0.075)$ | Base color for wave troughs — deep ocean navy |
+| Shallow | $(0.008,\; 0.135,\; 0.22)$ | Base color for wave crests — ocean teal |
+| Sky | $(0.36,\; 0.54,\; 0.72)$ | Fresnel reflection tint — desaturated sky blue |
 
 ---
 
@@ -557,8 +569,8 @@ All parameters are exposed in the `WaveParameters` struct and controlled via the
 
 | File | Lines | Description |
 |---|---|---|
-| `WaveShaders.metal` | 243 | GPU kernels and shaders — all simulation and rendering logic |
-| `WaveRenderer.swift` | 380 | Metal setup, frame loop, compute/render encoding, texture management |
-| `WaveSimulationView.swift` | 120 | SwiftUI↔UIKit bridge, MTKView configuration, touch handling |
-| `ContentView.swift` | 203 | SwiftUI host with control panel and parameter sliders |
+| `WaveShaders.metal` | ~246 | GPU kernels and shaders — all simulation and rendering logic |
+| `WaveRenderer.swift` | ~385 | Metal setup, frame loop, compute/render encoding, texture management |
+| `WaveSimulationView.swift` | ~124 | SwiftUI↔UIKit bridge, MTKView configuration, touch handling |
+| `ContentView.swift` | ~240 | SwiftUI host with control panel, sliders, color pickers |
 | `PixelWaveApp.swift` | ~10 | App entry point |

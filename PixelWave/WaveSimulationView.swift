@@ -2,15 +2,19 @@ import SwiftUI
 import MetalKit
 
 struct WaveParameters: Equatable {
-    var waveSpeed: Float = 18.0
-    var damping: Float = 0.75
-    var viscosity: Float = 0.35
-    var dispersion: Float = 0.24
-    var edgeReflection: Float = 0.5
-    var edgeWidth: Float = 0.08
-    var brushRadius: Float = 0.025
-    var impulse: Float = 0.62
+    var waveSpeed: Float = 12.0
+    var damping: Float = 0.35
+    var viscosity: Float = 0.18
+    var dispersion: Float = 0.12
+    var edgeReflection: Float = 0.42
+    var edgeWidth: Float = 0.065
+    var brushRadius: Float = 0.035
+    var impulse: Float = 0.55
     var pixelSize: Float = 3.0
+
+    var deepColor: SIMD3<Float> = SIMD3<Float>(0.004, 0.028, 0.075)
+    var shallowColor: SIMD3<Float> = SIMD3<Float>(0.008, 0.135, 0.22)
+    var skyColor: SIMD3<Float> = SIMD3<Float>(0.36, 0.54, 0.72)
 }
 
 struct WaveSimulationView: UIViewRepresentable {

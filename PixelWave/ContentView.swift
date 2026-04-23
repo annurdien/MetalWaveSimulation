@@ -147,12 +147,33 @@ struct ContentView: View {
                     range: 0.1...1.2,
                     decimals: 2
                 )
+                Divider()
+
+                Text("Wave Colors")
+                    .font(.caption.weight(.semibold))
+
+                HStack(spacing: 12) {
+                    ColorPicker("Deep", selection: colorBinding(for: \.deepColor), supportsOpacity: false)
+                        .font(.caption)
+                    ColorPicker("Mid", selection: colorBinding(for: \.shallowColor), supportsOpacity: false)
+                        .font(.caption)
+                    ColorPicker("Sky", selection: colorBinding(for: \.skyColor), supportsOpacity: false)
+                        .font(.caption)
+                }
 
                 HStack {
                     Button("Reset Surface") {
                         resetCount += 1
                     }
                     .buttonStyle(.borderedProminent)
+
+                    Button("Defaults") {
+                        withAnimation {
+                            parameters = WaveParameters()
+                        }
+                        resetCount += 1
+                    }
+                    .buttonStyle(.bordered)
 
                     Spacer()
 
@@ -167,6 +188,21 @@ struct ContentView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
         }
+    }
+
+    private func colorBinding(for keyPath: WritableKeyPath<WaveParameters, SIMD3<Float>>) -> Binding<Color> {
+        Binding(
+            get: {
+                let v = parameters[keyPath: keyPath]
+                return Color(red: Double(v.x), green: Double(v.y), blue: Double(v.z))
+            },
+            set: { newColor in
+                let uiColor = UIColor(newColor)
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+                parameters[keyPath: keyPath] = SIMD3<Float>(Float(r), Float(g), Float(b))
+            }
+        )
     }
 }
 

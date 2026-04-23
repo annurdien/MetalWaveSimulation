@@ -22,6 +22,9 @@ struct RenderUniforms {
     float2 textureSize;
     float time;
     float intensity;
+    float3 deepColor;
+    float3 shallowColor;
+    float3 skyColor;
 };
 
 struct VertexOut {
@@ -214,9 +217,9 @@ fragment float4 waveFragment(
     float fresnel = pow(1.0 - saturate(dot(normal, viewDirection)), 4.0);
 
     float depthMix = saturate(0.5 + center * 0.45);
-    float3 deepColor = float3(0.006, 0.055, 0.11);
-    float3 shallowColor = float3(0.02, 0.28, 0.4);
-    float3 skyColor = float3(0.42, 0.62, 0.79);
+    float3 deepColor = uniforms.deepColor;
+    float3 shallowColor = uniforms.shallowColor;
+    float3 skyColor = uniforms.skyColor;
 
     float3 baseWater = mix(deepColor, shallowColor, depthMix);
     float3 reflection = mix(float3(0.09, 0.16, 0.24), skyColor, fresnel);
