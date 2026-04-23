@@ -6,6 +6,7 @@ A realtime 2D wave simulation running entirely on the GPU via Metal compute and 
 
 ## Table of Contents
 
+- [Preview](#preview)
 - [Architecture Overview](#architecture-overview)
 - [Simulation Pipeline](#simulation-pipeline)
   - [Frame Loop](#frame-loop)
@@ -29,6 +30,12 @@ A realtime 2D wave simulation running entirely on the GPU via Metal compute and 
   - [Premultiplied Alpha Blending](#premultiplied-alpha-blending)
 - [Configurable Parameters](#configurable-parameters)
 - [File Reference](#file-reference)
+
+---
+
+## Preview
+
+![PixelWave Recording](assets/recording_iPhone_17_Pro_20260423_175309.gif)
 
 ---
 

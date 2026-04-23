@@ -29,10 +29,16 @@ private struct RenderUniforms {
 }
 
 final class WaveRenderer: NSObject, MTKViewDelegate {
+    private enum DisturbanceStrategy {
+        case readWrite
+        case splitPass
+    }
+
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let wavePipeline: MTLComputePipelineState
     private let disturbancePipeline: MTLComputePipelineState
+    private let disturbanceStrategy: DisturbanceStrategy
     private let renderPipeline: MTLRenderPipelineState
 
     private var parameters: WaveParameters
@@ -51,11 +57,26 @@ final class WaveRenderer: NSObject, MTKViewDelegate {
     private var lastFrameTimestamp: CFTimeInterval?
 
     init?(device: MTLDevice, view: MTKView, parameters: WaveParameters) {
+        let disturbanceStrategy: DisturbanceStrategy
+        let disturbanceFunctionName: String
+        #if targetEnvironment(simulator)
+        disturbanceStrategy = .splitPass
+        disturbanceFunctionName = "applyDisturbancesSingle"
+        #else
+        if device.readWriteTextureSupport == .tier2 {
+            disturbanceStrategy = .readWrite
+            disturbanceFunctionName = "applyDisturbancesReadWrite"
+        } else {
+            disturbanceStrategy = .splitPass
+            disturbanceFunctionName = "applyDisturbancesSingle"
+        }
+        #endif
+
         guard
             let commandQueue = device.makeCommandQueue(),
             let library = device.makeDefaultLibrary(),
             let waveFunction = library.makeFunction(name: "waveStep"),
-            let disturbanceFunction = library.makeFunction(name: "applyDisturbances"),
+            let disturbanceFunction = library.makeFunction(name: disturbanceFunctionName),
             let vertexFunction = library.makeFunction(name: "waveVertex"),
             let fragmentFunction = library.makeFunction(name: "waveFragment")
         else {
@@ -64,6 +85,7 @@ final class WaveRenderer: NSObject, MTKViewDelegate {
 
         self.device = device
         self.commandQueue = commandQueue
+        self.disturbanceStrategy = disturbanceStrategy
         self.parameters = parameters
 
         do {
@@ -154,12 +176,26 @@ final class WaveRenderer: NSObject, MTKViewDelegate {
 
         let disturbances = consumePendingDisturbances(maxCount: 32)
         if !disturbances.isEmpty {
-            encodeDisturbancePass(
-                commandBuffer: commandBuffer,
-                targetTexture: simulationTexture,
-                previousTexture: previousTexture,
-                disturbances: disturbances
-            )
+            switch disturbanceStrategy {
+            case .readWrite:
+                encodeDisturbanceReadWritePass(
+                    commandBuffer: commandBuffer,
+                    targetTexture: simulationTexture,
+                    previousTexture: previousTexture,
+                    disturbances: disturbances
+                )
+            case .splitPass:
+                guard let scratchTexture = nextTexture else {
+                    return
+                }
+                encodeDisturbanceSplitPass(
+                    commandBuffer: commandBuffer,
+                    targetTexture: simulationTexture,
+                    previousTexture: previousTexture,
+                    scratchTexture: scratchTexture,
+                    disturbances: disturbances
+                )
+            }
         }
 
         var simulatedSteps = 0
@@ -247,7 +283,7 @@ final class WaveRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
     }
 
-    private func encodeDisturbancePass(
+    private func encodeDisturbanceReadWritePass(
         commandBuffer: MTLCommandBuffer,
         targetTexture: MTLTexture,
         previousTexture: MTLTexture,
@@ -257,17 +293,18 @@ final class WaveRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        var mutableDisturbances = disturbances
+        let mutableDisturbances = disturbances
         var disturbanceCount = UInt32(disturbances.count)
 
         encoder.setComputePipelineState(disturbancePipeline)
         encoder.setTexture(targetTexture, index: 0)
         encoder.setTexture(previousTexture, index: 1)
-        encoder.setBytes(
-            &mutableDisturbances,
-            length: MemoryLayout<DisturbanceUniform>.stride * mutableDisturbances.count,
-            index: 0
-        )
+        mutableDisturbances.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return
+            }
+            encoder.setBytes(baseAddress, length: rawBuffer.count, index: 0)
+        }
         encoder.setBytes(
             &disturbanceCount,
             length: MemoryLayout<UInt32>.stride,
@@ -284,19 +321,146 @@ final class WaveRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
     }
 
+    private func encodeDisturbanceSplitPass(
+        commandBuffer: MTLCommandBuffer,
+        targetTexture: MTLTexture,
+        previousTexture: MTLTexture,
+        scratchTexture: MTLTexture,
+        disturbances: [DisturbanceUniform]
+    ) {
+        guard let currentEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            return
+        }
+
+        let mutableDisturbances = disturbances
+        var disturbanceCount = UInt32(disturbances.count)
+        var currentScale: Float = 0.59
+
+        currentEncoder.setComputePipelineState(disturbancePipeline)
+        currentEncoder.setTexture(targetTexture, index: 0)
+        currentEncoder.setTexture(scratchTexture, index: 1)
+        mutableDisturbances.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return
+            }
+            currentEncoder.setBytes(baseAddress, length: rawBuffer.count, index: 0)
+        }
+        currentEncoder.setBytes(
+            &disturbanceCount,
+            length: MemoryLayout<UInt32>.stride,
+            index: 1
+        )
+        currentEncoder.setBytes(
+            &currentScale,
+            length: MemoryLayout<Float>.stride,
+            index: 2
+        )
+
+        dispatch(
+            encoder: currentEncoder,
+            pipeline: disturbancePipeline,
+            width: targetTexture.width,
+            height: targetTexture.height
+        )
+        currentEncoder.endEncoding()
+
+        guard let blitCurrent = commandBuffer.makeBlitCommandEncoder() else {
+            return
+        }
+        blitCurrent.copy(
+            from: scratchTexture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: targetTexture.width, height: targetTexture.height, depth: 1),
+            to: targetTexture,
+            destinationSlice: 0,
+            destinationLevel: 0,
+            destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+        )
+        blitCurrent.endEncoding()
+
+        guard let previousEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            return
+        }
+        var previousScale: Float = -0.23
+        previousEncoder.setComputePipelineState(disturbancePipeline)
+        previousEncoder.setTexture(previousTexture, index: 0)
+        previousEncoder.setTexture(scratchTexture, index: 1)
+        mutableDisturbances.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return
+            }
+            previousEncoder.setBytes(baseAddress, length: rawBuffer.count, index: 0)
+        }
+        previousEncoder.setBytes(
+            &disturbanceCount,
+            length: MemoryLayout<UInt32>.stride,
+            index: 1
+        )
+        previousEncoder.setBytes(
+            &previousScale,
+            length: MemoryLayout<Float>.stride,
+            index: 2
+        )
+
+        dispatch(
+            encoder: previousEncoder,
+            pipeline: disturbancePipeline,
+            width: previousTexture.width,
+            height: previousTexture.height
+        )
+        previousEncoder.endEncoding()
+
+        guard let blitPrevious = commandBuffer.makeBlitCommandEncoder() else {
+            return
+        }
+        blitPrevious.copy(
+            from: scratchTexture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: previousTexture.width, height: previousTexture.height, depth: 1),
+            to: previousTexture,
+            destinationSlice: 0,
+            destinationLevel: 0,
+            destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+        )
+        blitPrevious.endEncoding()
+    }
+
     private func dispatch(
         encoder: MTLComputeCommandEncoder,
         pipeline: MTLComputePipelineState,
         width: Int,
         height: Int
     ) {
-        let threadWidth = pipeline.threadExecutionWidth
-        let threadHeight = max(1, pipeline.maxTotalThreadsPerThreadgroup / threadWidth)
+        guard width > 0, height > 0 else {
+            return
+        }
 
-        let threadsPerThreadgroup = MTLSize(width: threadWidth, height: threadHeight, depth: 1)
-        let threadsPerGrid = MTLSize(width: width, height: height, depth: 1)
+        let executionWidth = max(1, pipeline.threadExecutionWidth)
+        let maxThreads = max(1, pipeline.maxTotalThreadsPerThreadgroup)
+        let deviceLimit = device.maxThreadsPerThreadgroup
 
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+        // Use a conservative 1D threadgroup for simulator/device compatibility.
+        let maxThreadgroupWidth = max(1, min(maxThreads, max(1, deviceLimit.width)))
+        let threadgroupWidth = min(executionWidth, maxThreadgroupWidth)
+
+        let threadgroupHeight = 1
+
+        let threadsPerThreadgroup = MTLSize(
+            width: threadgroupWidth,
+            height: threadgroupHeight,
+            depth: 1
+        )
+        let threadgroupsPerGrid = MTLSize(
+            width: (width + threadgroupWidth - 1) / threadgroupWidth,
+            height: height,
+            depth: 1
+        )
+
+        encoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
     private func rotateTextures() {

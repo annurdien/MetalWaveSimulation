@@ -109,7 +109,7 @@ kernel void waveStep(
     nextTexture.write(clamp(next, -2.0, 2.0), gid);
 }
 
-kernel void applyDisturbances(
+kernel void applyDisturbancesReadWrite(
     texture2d<float, access::read_write> currentTexture [[texture(0)]],
     texture2d<float, access::read_write> previousTexture [[texture(1)]],
     constant DisturbanceUniform* disturbances [[buffer(0)]],
@@ -151,6 +151,41 @@ kernel void applyDisturbances(
         currentTexture.write(clamp(current, -2.0, 2.0), gid);
         previousTexture.write(clamp(previous, -2.0, 2.0), gid);
     }
+}
+
+kernel void applyDisturbancesSingle(
+    texture2d<float, access::read> sourceTexture [[texture(0)]],
+    texture2d<float, access::write> destinationTexture [[texture(1)]],
+    constant DisturbanceUniform* disturbances [[buffer(0)]],
+    constant uint& disturbanceCount [[buffer(1)]],
+    constant float& impulseScale [[buffer(2)]],
+    uint2 gid [[thread_position_in_grid]]
+) {
+    uint width = sourceTexture.get_width();
+    uint height = sourceTexture.get_height();
+
+    if (gid.x >= width || gid.y >= height) {
+        return;
+    }
+
+    float2 uv = (float2(gid) + 0.5) / float2(width, height);
+    float impulse = 0.0;
+
+    for (uint i = 0; i < disturbanceCount; ++i) {
+        DisturbanceUniform disturbance = disturbances[i];
+        float2 delta = uv - disturbance.center;
+        float radiusSquared = disturbance.radius * disturbance.radius;
+        float distanceSquared = dot(delta, delta);
+
+        if (distanceSquared < radiusSquared) {
+            float falloff = exp(-distanceSquared / max(radiusSquared * 0.18, 1e-6));
+            impulse += disturbance.strength * falloff;
+        }
+    }
+
+    float source = sourceTexture.read(gid).r;
+    float output = source + (impulse * impulseScale);
+    destinationTexture.write(clamp(output, -2.0, 2.0), gid);
 }
 
 vertex VertexOut waveVertex(uint vertexID [[vertex_id]]) {
